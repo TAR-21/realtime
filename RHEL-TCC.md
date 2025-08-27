@@ -2,17 +2,66 @@
 
 This document provides a complete procedure for setting up RHEL for Real Time on a machine with an Intel TCC-supported CPU and verifying its real-time performance using an application inside a Podman container.
 
+-----
+
 ### Part 1: Host OS Real-Time Environment Setup
 
 **Objective**: To tune the hardware and OS to reserve specific CPU cores as a "sanctuary" for real-time tasks.
 
-#### **Step 1. BIOS/UEFI Configuration**
+#### **Step 1. BIOS/UEFI Configuration (Hardware-Level Preparation)**
 
-  - Reboot the machine, enter the BIOS/UEFI setup utility, and **Enable** the "**Intel® Time Coordinated Computing (TCC) Mode**" option.
+**Objective**: To switch the CPU itself into a "full performance mode" optimized for real-time processing before the OS boots.
 
-#### **Step 2. OS Preparation**
+A typical PC's CPU is designed to balance performance and power consumption. For example, it automatically enters sleep modes (C-states) to save power when idle and dynamically changes its clock frequency (P-states / Turbo Boost) as needed.
 
-  - Install "**RHEL for Real Time**" as the operating system to ensure the system is running on a real-time kernel (`kernel-rt`).
+However, for real-time processing, these power-saving features and dynamic performance adjustments are sources of "unpredictable latency" (jitter). The time it takes to wake from sleep or for the clock frequency to stabilize is a significant source of noise when precision in the nanosecond range is required.
+
+**Enabling "Intel® TCC Mode"** is the act of eliminating or optimizing these sources of variability at the hardware level.
+
+**Specific Steps**:
+
+1.  **Accessing the BIOS/UEFI**: Immediately after powering on the PC, press the specific key displayed on the manufacturer's logo screen (often `F2`, `Del`, `F10`, or `Esc`) to enter the setup utility.
+2.  **Finding the Setting**: BIOS menus vary greatly by manufacturer and model, but the setting is typically located in one of the following sections:
+      * `Advanced` -\> `CPU Configuration`
+      * `Performance` / `Overclocking`
+      * `Platform Settings`
+3.  **Enabling and Saving**: Change the "Intel TCC Mode" or a similarly named option like "Real-Time Mode" to **Enabled**. Save the configuration (often with the `F10` key) and reboot.
+
+Only after completing this step is the CPU ready to respond to real-time requests from the OS with a consistent, predictable response time.
+
+#### **Step 2. OS Preparation (OS-Level Preparation)**
+
+**Objective**: To install a special OS kernel designed to handle real-time tasks with the highest priority.
+
+Standard operating system kernels (like those in Windows, macOS, and regular Linux) are built with "fairness" as a primary goal. They are good at sharing CPU time fairly among various tasks—a web browser, a music player, a background virus scan—to make it seem like all applications are running smoothly.
+
+However, this "fairness" is a problem for real-time systems where some tasks absolutely cannot be late.
+
+**Installing "RHEL for Real Time"** is the process of replacing the standard "fairness-based" kernel with a **real-time kernel (`kernel-rt`)**, which is built on the philosophy that "priority is everything."
+
+**Main Features of the Real-Time Kernel**:
+
+  * **Fully Preemptible**: A high-priority task can interrupt a lower-priority task almost anywhere, even in the middle of a kernel operation that would be non-interruptible in a standard kernel. This dramatically reduces task latency.
+  * **Priority-Based Scheduling**: The scheduler makes decisions based on the absolute priority number assigned to a task, rather than trying to be "fair."
+
+**Specific Steps**:
+RHEL for Real Time is less a completely separate OS and more of an add-on package group that provides real-time capabilities to RHEL.
+
+1.  **Enable the Repository**: First, you must tell the package manager (`dnf`) where to find the real-time packages.
+    ```bash
+    sudo subscription-manager repos --enable rhel-9-for-x86_64-rt-rpms
+    ```
+2.  **Install the Package Group**: Next, install the real-time kernel itself along with a set of related utilities.
+    ```bash
+    sudo dnf groupinstall "RT"
+    ```
+3.  **Reboot and Verify**: After the installation, reboot the system and confirm that you are running on the new real-time kernel.
+    ```bash
+    uname -r
+    ```
+    If the output version string ends with **`-rt`**, the installation was successful.
+
+This step establishes the OS-level foundation for prioritizing real-time tasks above all else.
 
 #### **Step 3. Kernel Tuning (CPU Core Isolation)**
 
